@@ -3,14 +3,14 @@ import mongoose from 'mongoose';
 import bodyParser from 'body-parser';
 
 const app = express();
-const port = process.env.PORT || 3001; // Different port than user service
+const port = process.env.PORT || 3003; // Different port than task/user service
 
 app.use(bodyParser.json());
 
 // MongoDB connection
 const connectDB = async () => {
 	try {
-		const mongoURI = process.env.MONGO_URI || 'mongodb://mongodb:27017/tasks';
+		const mongoURI = process.env.MONGO_URI || 'mongodb://mongodb:27017/notifications';
 
 		await mongoose.connect(mongoURI, {
 			useNewUrlParser: true,

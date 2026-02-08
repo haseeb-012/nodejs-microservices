@@ -1,9 +1,10 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import bodyParser from 'body-parser';
+import amqp from 'amqplib';
 
 const app = express();
-const port = process.env.PORT || 3001; // Different port than user service
+const port = process.env.PORT || 3002; // Different port than user service
 
 app.use(bodyParser.json());
 
@@ -12,11 +13,7 @@ const connectDB = async () => {
 	try {
 		const mongoURI = process.env.MONGO_URI || 'mongodb://mongodb:27017/tasks';
 
-		await mongoose.connect(mongoURI, {
-			useNewUrlParser: true,
-			useUnifiedTopology: true,
-			serverSelectionTimeoutMS: 5000,
-		});
+		await mongoose.connect(mongoURI);
 
 		console.log('✅ Task Service: MongoDB connected successfully!');
 	} catch (err) {
@@ -64,6 +61,32 @@ const taskSchema = new mongoose.Schema(
 );
 
 const Task = mongoose.model('Task', taskSchema);
+
+let channel, connection;
+
+async function channelwithRabbitMQ(retries = 5, delay = 5000) {
+	while (retries > 0) {
+		try {
+			const connection = await amqp.connect('amqp://rabbitmq:5672');
+			const channel = await connection.createChannel();
+			console.log('✅ Task Service: Connected to RabbitMQ successfully!');
+			await channel.assertQueue('task_created', { durable: true });
+			return channel; // Return the channel on success
+		} catch (error) {
+			console.error(
+				'❌ Task Service: RabbitMQ connection error:',
+				error.message,
+			);
+			retries--;
+			if (retries > 0) {
+				console.log(`🔄 Retrying RabbitMQ connection in ${delay / 1000}s...`);
+				await new Promise((resolve) => setTimeout(resolve, delay));
+			}
+		}
+	}
+	throw new Error('Failed to connect to RabbitMQ after all retries');
+}
+
 
 // Routes
 
@@ -113,7 +136,27 @@ app.get('/tasks/:id', async (req, res) => {
 // 3. POST create new task
 app.post('/tasks', async (req, res) => {
 	try {
-		const { title, description, status, priority, dueDate, userId } = req.body;
+		const { _id, title, description, status, priority, dueDate, userId } =
+			req.body;
+
+		const message = {
+			task_id: _id,
+			title,
+			description,
+			userId,
+		};
+
+		if (!channel) {
+			console.error('❌ Task Service: RabbitMQ channel is not available');
+			return res.status(500).json({
+				success: false,
+				message: 'RabbitMQ channel is not available',
+			});
+		}
+
+		channel.sendToQueue('task_created', Buffer.from(JSON.stringify(message)), {
+			persistent: true,
+		});
 
 		// Validation
 		if (!title) {
@@ -233,4 +276,5 @@ app.get('/', (req, res) => {
 // Start server
 app.listen(port, () => {
 	console.log(`🚀 Task Service running on port ${port}`);
+	channelwithRabbitMQ(); // Connect to RabbitMQ when server starts
 });
