@@ -17,7 +17,7 @@ services:
   
   user-service:
     build: ./user-service
-    container_name: user_servuce
+    container_name: user_service
     ports:
       - 3000:3000
     depends_on:
@@ -27,9 +27,18 @@ services:
     build: ./task-service
     container_name: task_service
     ports:
-      - 3001:3001
+      - 3002:3002
     depends_on:
       - mongodb
+    
+  notification-consumer:
+    build: ./notification-service
+    container_name: notification_consumer
+    ports:
+      - "3003:3003"  # For health checks only
+    depends_on:
+      - rabbitmq
+    
     
 
 volumes:
